@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>9K-AXB · A320 Maintenance Planning Case Study</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#0c121b;
+  --panel:#131b27;
+  --panel-alt:#182233;
+  --raised:#1c2839;
+  --border:#28374b;
+  --border-soft:#1e2a3c;
+  --text:#e8edf5;
+  --muted:#8ea0b8;
+  --muted-dim:#5f7186;
+  --cyan:#3fc6d6;
+  --amber:#f0a93b;
+  --red:#e6533c;
+  --green:#54c97a;
+  --blue:#5b8def;
+  --display:'Space Grotesk',sans-serif;
+  --body:'Inter',sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:
+    radial-gradient(ellipse at top left, rgba(63,198,214,0.06), transparent 55%),
+    radial-gradient(ellipse at bottom right, rgba(240,169,59,0.05), transparent 50%),
+    var(--bg);
+  color:var(--text);
+  font-family:var(--body);
+  min-height:100vh;
+}
+::selection{background:var(--cyan);color:#04141a;}
+a{color:var(--cyan);}
+
+/* ===== Top status bar ===== */
+.topbar{
+  display:flex;align-items:center;gap:18px;
+  padding:14px 24px;
+  background:linear-gradient(180deg,#111a26,#0e1621);
+  border-bottom:1px solid var(--border);
+  position:sticky;top:0;z-index:50;
+  flex-wrap:wrap;
+}
+.tail{
+  font-family:var(--display);font-weight:700;font-size:22px;letter-spacing:0.5px;
+  color:var(--text);
+  display:flex;align-items:center;gap:10px;
+}
+.tail .dot{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);}
+.topbar .sub{font-size:12px;color:var(--muted);font-family:var(--mono);}
+.status-strip{display:flex;gap:22px;margin-left:auto;flex-wrap:wrap;align-items:center;}
+.status-chip{
+  display:flex;flex-direction:column;gap:2px;padding:6px 14px;
+  border-left:1px solid var(--border);
+}
+.status-chip:first-child{border-left:none;}
+.status-chip .label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted-dim);}
+.status-chip .value{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--text);}
+.export-btn{
+  display:flex;align-items:center;gap:8px;
+  background:linear-gradient(180deg,#3fc6d6,#2ba3b2);
+  color:#04181d;border:none;border-radius:6px;
+  padding:10px 18px;font-family:var(--display);font-weight:600;font-size:13px;
+  cursor:pointer;letter-spacing:0.3px;
+  box-shadow:0 4px 14px rgba(63,198,214,0.25);
+  transition:transform .15s ease, box-shadow .15s ease;
+}
+.export-btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(63,198,214,0.35);}
+.export-btn:active{transform:translateY(0);}
+.export-btn svg{width:15px;height:15px;}
+
+/* ===== Layout ===== */
+.shell{display:flex;min-height:calc(100vh - 66px);}
+.navrail{
+  width:230px;flex-shrink:0;
+  background:var(--panel);
+  border-right:1px solid var(--border);
+  padding:18px 0;
+  position:sticky;top:66px;align-self:flex-start;
+  height:calc(100vh - 66px);overflow-y:auto;
+}
+.navrail .group-label{
+  font-size:10px;color:var(--muted-dim);text-transform:uppercase;letter-spacing:1.5px;
+  padding:6px 20px 10px;
+}
+.navitem{
+  display:flex;align-items:center;gap:12px;
+  padding:11px 20px;cursor:pointer;
+  border-left:3px solid transparent;
+  color:var(--muted);font-size:13.5px;
+  transition:background .12s ease,color .12s ease;
+}
+.navitem .num{font-family:var(--mono);font-size:11px;color:var(--muted-dim);width:18px;}
+.navitem:hover{background:var(--panel-alt);color:var(--text);}
+.navitem.active{
+  background:var(--panel-alt);color:var(--cyan);border-left-color:var(--cyan);
+}
+.navitem.active .num{color:var(--cyan);}
+
+.main{flex:1;padding:28px 32px 60px;max-width:1360px;}
+.section{display:none;animation:fadein .25s ease;}
+.section.active{display:block;}
+@keyframes fadein{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
+
+.section-head{margin-bottom:22px;}
+.section-eyebrow{
+  font-family:var(--mono);font-size:11px;color:var(--cyan);letter-spacing:2px;text-transform:uppercase;
+  display:flex;align-items:center;gap:8px;
+}
+.section-eyebrow::before{content:'';width:16px;height:1px;background:var(--cyan);}
+.section-title{font-family:var(--display);font-size:26px;font-weight:600;margin:6px 0 6px;}
+.section-desc{color:var(--muted);font-size:13.5px;max-width:760px;line-height:1.6;}
+
+.panel{
+  background:var(--panel);border:1px solid var(--border);border-radius:10px;
+  padding:20px 22px;margin-bottom:20px;
+}
+.panel-title{font-family:var(--display);font-size:15px;font-weight:600;margin:0 0 14px;color:var(--text);display:flex;align-items:center;justify-content:space-between;}
+.pill{font-size:10px;font-family:var(--mono);padding:3px 9px;border-radius:20px;border:1px solid var(--border);color:var(--muted);}
+
+/* ===== Tables ===== */
+.table-wrap{overflow-x:auto;border-radius:8px;border:1px solid var(--border-soft);}
+table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:720px;}
+thead th{
+  text-align:left;background:var(--panel-alt);color:var(--muted);
+  font-size:10.5px;text-transform:uppercase;letter-spacing:0.8px;font-weight:600;
+  padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap;
+}
+tbody td{padding:10px 12px;border-bottom:1px solid var(--border-soft);color:var(--text);vertical-align:middle;}
+tbody tr:hover{background:rgba(63,198,214,0.04);}
+tbody tr:last-child td{border-bottom:none;}
+.mono{font-family:var(--mono);color:var(--text);}
+.muted{color:var(--muted);}
+
+/* status pills */
+.status{
+  display:inline-flex;align-items:center;gap:6px;
+  font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:0.4px;
+  padding:4px 10px;border-radius:20px;white-space:nowrap;
+}
+.status::before{content:'';width:6px;height:6px;border-radius:50%;}
+.status.overdue{background:rgba(230,83,60,0.12);color:var(--red);}
+.status.overdue::before{background:var(--red);}
+.status.due{background:rgba(240,169,59,0.12);color:var(--amber);}
+.status.due::before{background:var(--amber);}
+.status.ok{background:rgba(84,201,122,0.12);color:var(--green);}
+.status.ok::before{background:var(--green);}
+.status.routine{background:rgba(91,141,239,0.12);color:var(--blue);}
+.status.routine::before{background:var(--blue);}
+
+/* runway bar — signature element */
+.runway{
+  position:relative;width:150px;height:16px;border-radius:3px;
+  background:#0a1119;border:1px solid var(--border);overflow:hidden;
+}
+.runway .fill{
+  position:absolute;top:0;left:0;height:100%;
+  background:linear-gradient(90deg,var(--cyan),var(--green));
+}
+.runway.amber .fill{background:linear-gradient(90deg,#e0c04a,var(--amber));}
+.runway.red .fill{background:linear-gradient(90deg,#e6533c,#b8331f);}
+.runway .centerline{
+  position:absolute;top:50%;left:0;right:0;height:0;
+  border-top:1.5px dashed rgba(255,255,255,0.25);
+  transform:translateY(-50%);
+}
+.runway .threshold{
+  position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.4);right:0;
+}
+.runway-wrap{display:flex;flex-direction:column;gap:4px;}
+.runway-label{font-family:var(--mono);font-size:10px;color:var(--muted);}
+
+/* ===== Dashboard KPI rings ===== */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;margin-bottom:20px;}
+.kpi-card{
+  background:var(--panel);border:1px solid var(--border);border-radius:10px;
+  padding:18px;display:flex;align-items:center;gap:16px;
+}
+.ring{
+  width:64px;height:64px;border-radius:50%;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;position:relative;
+}
+.ring::after{
+  content:'';position:absolute;inset:6px;border-radius:50%;background:var(--panel);
+}
+.ring span{position:relative;z-index:2;font-family:var(--mono);font-weight:600;font-size:16px;}
+.kpi-meta .kpi-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;}
+.kpi-meta .kpi-sub{font-size:11px;color:var(--muted-dim);margin-top:2px;}
+
+.chart-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:18px;}
+@media(max-width:980px){.chart-grid{grid-template-columns:1fr;}}
+.chart-box{height:280px;position:relative;}
+
+/* Aircraft profile card */
+.profile-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0;}
+.profile-item{padding:14px 18px;border-bottom:1px solid var(--border-soft);border-right:1px solid var(--border-soft);}
+.profile-item .k{font-size:10.5px;text-transform:uppercase;letter-spacing:0.8px;color:var(--muted-dim);margin-bottom:5px;}
+.profile-item .v{font-family:var(--mono);font-size:14px;color:var(--text);}
+.profile-item .v.big{font-family:var(--display);font-size:19px;font-weight:600;color:var(--cyan);}
+
+.badge-loc{
+  display:inline-flex;align-items:center;gap:6px;
+  background:rgba(63,198,214,0.1);border:1px solid rgba(63,198,214,0.3);
+  color:var(--cyan);font-size:10.5px;padding:3px 9px;border-radius:20px;margin-left:8px;font-family:var(--mono);
+}
+
+.note{
+  font-size:12px;color:var(--muted);background:var(--panel-alt);
+  border:1px solid var(--border-soft);border-left:3px solid var(--cyan);
+  border-radius:6px;padding:10px 14px;line-height:1.6;margin-top:14px;
+}
+.note b{color:var(--text);}
+
+.refs{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px;}
+.refs li{
+  display:flex;gap:12px;padding:12px 14px;background:var(--panel-alt);
+  border:1px solid var(--border-soft);border-radius:8px;font-size:12.5px;line-height:1.6;
+}
+.refs .refnum{font-family:var(--mono);color:var(--cyan);font-weight:600;flex-shrink:0;}
+
+footer{padding:26px 32px;color:var(--muted-dim);font-size:11px;border-top:1px solid var(--border);text-align:center;}
+
+@media(max-width:840px){
+  .shell{flex-direction:column;}
+  .navrail{width:100%;height:auto;position:relative;top:0;display:flex;overflow-x:auto;padding:8px;}
+  .navitem{flex-shrink:0;border-left:none;border-bottom:3px solid transparent;}
+  .navitem.active{border-left:none;border-bottom-color:var(--cyan);}
+  .main{padding:20px 16px 48px;}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="tail"><span class="dot"></span>9K-AXB <span class="sub">A320-214 · Gulf Wing Aviation</span></div>
+  <div class="status-strip">
+    <div class="status-chip"><span class="label">As of</span><span class="value" id="chipDate">—</span></div>
+    <div class="status-chip"><span class="label">Total FH</span><span class="value" id="chipFH">—</span></div>
+    <div class="status-chip"><span class="label">Total FC</span><span class="value" id="chipFC">—</span></div>
+    <div class="status-chip"><span class="label">Home Base</span><span class="value">OKBK / KWI</span></div>
+  </div>
+  <button class="export-btn" id="exportBtn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+    Export to Excel
+  </button>
+</div>
+
+<div class="shell">
+  <nav class="navrail" id="navrail">
+    <div class="group-label">Case Study Modules</div>
+    <div class="navitem active" data-target="profile"><span class="num">01</span>Aircraft Profile</div>
+    <div class="navitem" data-target="library"><span class="num">02</span>Source Task Library</div>
+    <div class="navitem" data-target="utilisation"><span class="num">03</span>Aircraft Utilisation</div>
+    <div class="navitem" data-target="forecast"><span class="num">04</span>Due Forecast</div>
+    <div class="navitem" data-target="scheduling"><span class="num">05</span>Maintenance Scheduling</div>
+    <div class="navitem" data-target="resources"><span class="num">06</span>Resource Planning</div>
+    <div class="navitem" data-target="progress"><span class="num">07</span>Progress Monitoring</div>
+    <div class="navitem" data-target="dashboard"><span class="num">08</span>Dashboard</div>
+    <div class="navitem" data-target="references"><span class="num">09</span>References</div>
+  </nav>
+
+  <main class="main">
+
+    <!-- 01 AIRCRAFT PROFILE -->
+    <section class="section active" id="sec-profile">
+      <div class="section-head">
+        <div class="section-eyebrow">01 · Aircraft Profile</div>
+        <div class="section-title">9K-AXB — Airbus A320-214</div>
+        <div class="section-desc">Fictional airframe built for this case study. Home base is set to your current location
+          <span class="badge-loc">📍 Kuwait — OKBK / KWI</span></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Airframe &amp; Operator</div>
+        <div class="table-wrap" style="border:none;">
+          <div class="profile-grid">
+            <div class="profile-item"><div class="k">Registration</div><div class="v big" id="pReg">—</div></div>
+            <div class="profile-item"><div class="k">MSN</div><div class="v" id="pMsn">—</div></div>
+            <div class="profile-item"><div class="k">Aircraft Type</div><div class="v" id="pType">—</div></div>
+            <div class="profile-item"><div class="k">Engines</div><div class="v" id="pEng">—</div></div>
+            <div class="profile-item"><div class="k">Operator</div><div class="v" id="pOp">—</div></div>
+            <div class="profile-item"><div class="k">Home Base / Line Station</div><div class="v" id="pBase">—</div></div>
+            <div class="profile-item"><div class="k">Cabin Configuration</div><div class="v" id="pConfig">—</div></div>
+            <div class="profile-item"><div class="k">Delivery Date</div><div class="v" id="pDelivery">—</div></div>
+            <div class="profile-item"><div class="k">Aircraft Age</div><div class="v" id="pAge">—</div></div>
+            <div class="profile-item"><div class="k">Current Flight Hours</div><div class="v big" id="pFH">—</div></div>
+            <div class="profile-item"><div class="k">Current Flight Cycles</div><div class="v big" id="pFC">—</div></div>
+            <div class="profile-item"><div class="k">Avg. Daily Utilisation</div><div class="v" id="pUtil">—</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Last Heavy Maintenance Visit</div>
+        <div id="pLastHeavy" class="mono" style="font-size:13px;line-height:1.8;"></div>
+        <div class="note">This aircraft profile, its utilisation history, and its maintenance schedule are a <b>fictional scenario</b> constructed for this planning case study. The task intervals and thresholds referenced in Module 02 are drawn from publicly available, genuinely sourced Airbus A320 MPD / MRBR structure and figures — see Module 09 for full references.</div>
+      </div>
+    </section>
+
+    <!-- 02 SOURCE TASK LIBRARY -->
+    <section class="section" id="sec-library">
+      <div class="section-head">
+        <div class="section-eyebrow">02 · Source Task Library</div>
+        <div class="section-title">Genuinely Sourced A320 Maintenance Tasks</div>
+        <div class="section-desc">15 representative maintenance tasks spanning Zonal, Systems, Structures, Powerplant and ALI/CMR categories, built from publicly documented Airbus A320 MPD / MRBR intervals and structures.</div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Task Library <span class="pill" id="libCount">15 tasks</span></div>
+        <div class="table-wrap">
+          <table id="tblLibrary">
+            <thead><tr>
+              <th>Task Number</th><th>Description</th><th>Threshold</th><th>Interval</th>
+              <th>FH</th><th>FC</th><th>Calendar</th><th>Source</th><th>Reference</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="note">Task numbers follow real ATA-chapter-based MPD numbering conventions and reflect publicly cited threshold/interval figures (e.g. A-check 750FH/750FC/6MO, C-check 7,500FH/5,000FC/24MO, LG restoration 20,000FC/8YE, structures 6YE/12YE). They are representative educational entries — not a verbatim reproduction of Airbus' proprietary MPD task cards.</div>
+      </div>
+    </section>
+
+    <!-- 03 AIRCRAFT UTILISATION -->
+    <section class="section" id="sec-utilisation">
+      <div class="section-head">
+        <div class="section-eyebrow">03 · Aircraft Utilisation</div>
+        <div class="section-title">Trailing 12-Month Utilisation</div>
+        <div class="section-desc">Fictional monthly flight-hour and flight-cycle history used to drive the due-forecast projections in Module 04.</div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Monthly Utilisation Log</div>
+        <div class="table-wrap">
+          <table id="tblUtil">
+            <thead><tr><th>Month</th><th>Flight Hours</th><th>Flight Cycles</th><th>Avg Sector (hrs)</th><th>Daily Util. (FH)</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Utilisation Trend</div>
+        <div class="chart-box"><canvas id="chartUtil"></canvas></div>
+      </div>
+    </section>
+
+    <!-- 04 DUE FORECAST -->
+    <section class="section" id="sec-forecast">
+      <div class="section-head">
+        <div class="section-eyebrow">04 · Due Forecast</div>
+        <div class="section-title">Live Task Due-Date Projection</div>
+        <div class="section-desc">Computed on load from current FH/FC/date and daily utilisation rates. Each task's governing "whichever-comes-first" parameter is highlighted, with a runway-style bar showing % of interval consumed.</div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Forecast Table <span class="pill" id="fcCount">—</span></div>
+        <div class="table-wrap">
+          <table id="tblForecast">
+            <thead><tr>
+              <th>Task</th><th>Description</th><th>Last Done</th><th>Governs</th>
+              <th>Next Due</th><th>Remaining</th><th>Life Consumed</th><th>Status</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 05 MAINTENANCE SCHEDULING -->
+    <section class="section" id="sec-scheduling">
+      <div class="section-head">
+        <div class="section-eyebrow">05 · Maintenance Scheduling</div>
+        <div class="section-title">Planned Maintenance Events</div>
+        <div class="section-desc">Overdue and due-soon tasks bundled into upcoming line and base maintenance events, keeping the aircraft available for operation between visits.</div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Event Schedule</div>
+        <div class="table-wrap">
+          <table id="tblSchedule">
+            <thead><tr>
+              <th>Event</th><th>Type</th><th>Station</th><th>Planned Start</th><th>Planned End</th>
+              <th>Downtime</th><th>Tasks Included</th><th>Status</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="note">The Nose Landing Gear ALI overhaul (32-21-00-ALI) remains <b>on track</b> and is deferred to the next heavy visit (target 2027), avoiding unnecessary aircraft downtime.</div>
+      </div>
+    </section>
+
+    <!-- 06 RESOURCE PLANNING -->
+    <section class="section" id="sec-resources">
+      <div class="section-head">
+        <div class="section-eyebrow">06 · Resource Planning</div>
+        <div class="section-title">Manpower, Skills &amp; Tooling</div>
+        <div class="section-desc">Resource estimate to execute the scheduled events in Module 05, primarily the C4 heavy visit at the outsourced base maintenance facility.</div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Resource Plan</div>
+        <div class="table-wrap">
+          <table id="tblResources">
+            <thead><tr><th>Trade / Skill</th><th>Headcount</th><th>Man-Hours Est.</th><th>Shift Pattern</th><th>Special Tooling / Materials</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 07 PROGRESS MONITORING -->
+    <section class="section" id="sec-progress">
+      <div class="section-head">
+        <div class="section-eyebrow">07 · Progress Monitoring</div>
+        <div class="section-title">Work Order Status</div>
+        <div class="section-desc">Task-by-task tracking from work order raise to sign-off, so nothing identified in Module 04 falls through the cracks.</div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Work Order Tracker</div>
+        <div class="table-wrap">
+          <table id="tblProgress">
+            <thead><tr><th>WO No.</th><th>Task</th><th>Assigned To</th><th>Status</th><th>Target Date</th><th>Remarks</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 08 DASHBOARD -->
+    <section class="section" id="sec-dashboard">
+      <div class="section-head">
+        <div class="section-eyebrow">08 · Dashboard</div>
+        <div class="section-title">Fleet Status Overview</div>
+        <div class="section-desc">Live KPI summary computed from the due-forecast engine — a one-glance view for the planning meeting.</div>
+      </div>
+
+      <div class="kpi-grid" id="kpiGrid"></div>
+
+      <div class="chart-grid">
+        <div class="panel">
+          <div class="panel-title">Days Remaining by Task <span class="pill">sorted, most urgent first</span></div>
+          <div class="chart-box"><canvas id="chartDays"></canvas></div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">Task Status Breakdown</div>
+          <div class="chart-box"><canvas id="chartStatus"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 09 REFERENCES -->
+    <section class="section" id="sec-references">
+      <div class="section-head">
+        <div class="section-eyebrow">09 · References</div>
+        <div class="section-title">Sources</div>
+        <div class="section-desc">Regulatory, OEM and industry sources underpinning the task library in Module 02.</div>
+      </div>
+      <div class="panel">
+        <ul class="refs" id="refList"></ul>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<footer>A320 Maintenance Planning Case Study — educational / illustrative use only. Aircraft profile, utilisation and schedule are fictional. Task intervals reference publicly available Airbus A320 MPD/MRBR structure &amp; industry publications.</footer>
+
+<script>
+/* ============================================================
+   DATA
+   ============================================================ */
+const profile = {
+  registration:"9K-AXB", msn:"8451", type:"Airbus A320-214",
+  engines:"2 × CFM56-5B4/3 (27,000 lbf)",
+  operator:"Gulf Wing Aviation",
+  base:"Kuwait International Airport (OKBK / KWI), Kuwait",
+  config:"180Y — single class",
+  deliveryDate:"2013-03-14",
+  currentDate:"2026-08-13",
+  currentFH:58430, currentFC:33120,
+  dailyFH:8.6, dailyFC:4.9,
+  lastHeavy:"C3 Heavy Check — completed 2025-02-02 at 51,200 FH / 29,400 FC — Joramco, Amman (Jordan)"
+};
+
+const tasks = [
+ {id:1, taskNumber:"05-20-00-1", description:"Zonal General Visual Inspection – Powerplant & Pylon Zones", threshold:"4 MO", interval:"4 MO (multiples 8 / 12 MO)", fhInt:null, fcInt:null, moInt:4, source:"MRB Zonal Programme", reference:"[4] MPD General Introduction — Zonal Section", lastDoneDate:"2026-04-20", lastDoneFH:56900, lastDoneFC:32250},
+ {id:2, taskNumber:"05-20-10-2", description:"Zonal GVI – Fuselage & Empennage Zones (extended)", threshold:"20 MO", interval:"20 MO / 40 MO", fhInt:null, fcInt:null, moInt:20, source:"MRB Zonal Programme", reference:"[4] MPD General Introduction — Zonal Section", lastDoneDate:"2024-12-05", lastDoneFH:47200, lastDoneFC:26850},
+ {id:3, taskNumber:"21-26-00-1", description:"Avionics Ventilation & Cooling System – Detailed Inspection", threshold:"750 FH", interval:"750 FH / 6 MO", fhInt:750, fcInt:null, moInt:6, source:"MPD Rev.45 — A-Cluster example", reference:"Leeham \u2018Bjorn\u2019s Corner\u2019 Pt.48 [4]", lastDoneDate:"2026-06-20", lastDoneFH:57600, lastDoneFC:32550},
+ {id:4, taskNumber:"21-26-05-2", description:"Avionics Cooling System – General Visual Inspection (extended)", threshold:"10,000 FH", interval:"10,000 FH / 3 YE", fhInt:10000, fcInt:null, moInt:36, source:"MPD Rev.45", reference:"Leeham \u2018Bjorn\u2019s Corner\u2019 Pt.48 [4]", lastDoneDate:"2023-11-01", lastDoneFH:49800, lastDoneFC:28100},
+ {id:5, taskNumber:"27-14-00-2", description:"Flight Control System – Functional Check (PFC Lanes)", threshold:"6,000 FH", interval:"6,000 FH / 3,600 FC / 36 MO", fhInt:6000, fcInt:3600, moInt:36, source:"MRBR — ATA 27 Systems", reference:"Leeham \u2018Bjorn\u2019s Corner\u2019 Pt.6", lastDoneDate:"2023-09-10", lastDoneFH:52300, lastDoneFC:29700},
+ {id:6, taskNumber:"28-11-00-CMR", description:"Fuel Tank System – CMR Bonding & Ignition-Source Inspection (SFAR88 / CDCCL)", threshold:"6 YE", interval:"6 YE", fhInt:null, fcInt:null, moInt:72, source:"Certification Maintenance Requirement (CMR)", reference:"[1][3] EASA Continuing Airworthiness / Easy Access Rules", lastDoneDate:"2020-09-01", lastDoneFH:36100, lastDoneFC:20450},
+ {id:7, taskNumber:"32-11-00-ALI", description:"Main Landing Gear – Overhaul / Restoration", threshold:"20,000 FC", interval:"20,000 FC / 8 YE", fhInt:null, fcInt:20000, moInt:96, source:"Airworthiness Limitation Item (ALI)", reference:"MRB Report — A318/A319/A320/A321", lastDoneDate:"2018-07-01", lastDoneFH:31500, lastDoneFC:13200},
+ {id:8, taskNumber:"32-21-00-ALI", description:"Nose Landing Gear – Overhaul / Restoration", threshold:"20,000 FC", interval:"20,000 FC / 8 YE", fhInt:null, fcInt:20000, moInt:96, source:"Airworthiness Limitation Item (ALI)", reference:"MRB Report — A318/A319/A320/A321", lastDoneDate:"2019-05-15", lastDoneFH:34700, lastDoneFC:15000},
+ {id:9, taskNumber:"32-45-00-3", description:"Main Wheel Tyres – Condition Check & Retread Programme", threshold:"250 FC", interval:"250 FC (on-condition / rotation)", fhInt:null, fcInt:250, moInt:null, source:"Operator Tyre Programme", reference:"Aircraft Commerce Issue 44 — A320 Family Maintenance & Budget", lastDoneDate:"2026-08-01", lastDoneFH:58100, lastDoneFC:32900},
+ {id:10, taskNumber:"52-31-00-4", description:"Cargo Compartment Doors – Seal Cleaning & Greasing", threshold:"12 MO", interval:"12 MO", fhInt:null, fcInt:null, moInt:12, source:"Airbus Technical Adaptation", reference:"EASA AD ref. TA 80774334/003/2020", lastDoneDate:"2025-09-05", lastDoneFH:53200, lastDoneFC:30150},
+ {id:11, taskNumber:"71-00-00-A", description:"Powerplant – Borescope Inspection (HPC / HPT, both engines)", threshold:"3,000 FH", interval:"3,000 FH", fhInt:3000, fcInt:null, moInt:null, source:"CFM56-5B Engine Manual Task", reference:"[4]; Aircraft-Commerce engine maintenance analysis", lastDoneDate:"2026-03-10", lastDoneFH:54500, lastDoneFC:30900},
+ {id:12, taskNumber:"05-10-00-A", description:"A-Check Task Package (Systems GVI / Operational Checks bundle)", threshold:"750 FH", interval:"750 FH / 750 FC / 6 MO — whichever first", fhInt:750, fcInt:750, moInt:6, source:"MPD Rev.45 — A-Cluster", reference:"Leeham \u2018Bjorn\u2019s Corner\u2019 Pt.48 [4]", lastDoneDate:"2026-06-05", lastDoneFH:57750, lastDoneFC:32700},
+ {id:13, taskNumber:"05-10-00-C", description:"C-Check Task Package (Structures & Systems Heavy bundle)", threshold:"7,500 FH", interval:"7,500 FH / 5,000 FC / 24 MO — whichever first", fhInt:7500, fcInt:5000, moInt:24, source:"MPD Rev.45 — C-Cluster", reference:"Leeham \u2018Bjorn\u2019s Corner\u2019 Pt.48 [4]", lastDoneDate:"2025-02-02", lastDoneFH:51200, lastDoneFC:29400},
+ {id:14, taskNumber:"55-00-00-1", description:"Structures – Environmental Deterioration GVI/DET (fuselage skin & wing box)", threshold:"6 YE", interval:"6 YE / 12 YE", fhInt:null, fcInt:null, moInt:72, source:"MRBR Structures Section", reference:"Airbus A320 MPD — Structures Section (public excerpt) [4]", lastDoneDate:"2020-08-20", lastDoneFH:35400, lastDoneFC:20050},
+ {id:15, taskNumber:"00-00-00-DAILY", description:"Daily / Transit Check – Pre-flight Walkaround & Servicing", threshold:"Before first flight of the day", interval:"Daily (24 hr)", fhInt:null, fcInt:null, moInt:null, isDaily:true, source:"Operator AMP — Daily Programme", reference:"IALTA — Airbus Daily Tasks (AMP Development)", lastDoneDate:"2026-08-12", lastDoneFH:58421, lastDoneFC:33116}
+];
+
+const utilisation = [
+ {month:"Sep 2025", fh:265, fc:152},
+ {month:"Oct 2025", fh:250, fc:145},
+ {month:"Nov 2025", fh:235, fc:138},
+ {month:"Dec 2025", fh:270, fc:150},
+ {month:"Jan 2026", fh:260, fc:148},
+ {month:"Feb 2026", fh:240, fc:140},
+ {month:"Mar 2026", fh:255, fc:146},
+ {month:"Apr 2026", fh:248, fc:142},
+ {month:"May 2026", fh:262, fc:150},
+ {month:"Jun 2026", fh:285, fc:160},
+ {month:"Jul 2026", fh:292, fc:164},
+ {month:"Aug 2026 (1–13)", fh:112, fc:62}
+];
+
+const scheduleEvents = [
+ {event:"Zonal & Structures Task Bundle", type:"Line", station:"Kuwait Intl (OKBK) — Gulf Wing Technical", start:"2026-08-19", end:"2026-08-19", downtime:"10 hrs (overnight)", tasks:"05-20-00-1, 05-20-10-2, 55-00-00-1", status:"Scheduled"},
+ {event:"A-Check A-88 Bundle", type:"Line", station:"Kuwait Intl (OKBK) — Gulf Wing Technical", start:"2026-08-21", end:"2026-08-21", downtime:"12 hrs (overnight)", tasks:"05-10-00-A, 21-26-00-1, 32-45-00-3, 52-31-00-4, 71-00-00-A", status:"Scheduled"},
+ {event:"C4 Heavy Maintenance Visit", type:"Base — Outsourced", station:"Joramco, Queen Alia Intl Airport, Amman (Jordan)", start:"2026-09-10", end:"2026-09-22", downtime:"12 days (AOG)", tasks:"05-10-00-C, 27-14-00-2, 28-11-00-CMR, 32-11-00-ALI", status:"Slot Confirmed"},
+ {event:"Next Heavy Visit (tentative)", type:"Base — Outsourced", station:"TBD", start:"2027-Q2", end:"2027-Q2", downtime:"TBD", tasks:"32-21-00-ALI (NLG overhaul — on track, deferred)", status:"Monitoring"}
+];
+
+const resources = [
+ {trade:"Airframe / Structures Mechanics", head:6, mh:480, shift:"2-shift (Base)", tooling:"Structural GVI/DET kit, access stands, work platforms"},
+ {trade:"Avionics / Electrical Technicians", head:3, mh:150, shift:"Day shift", tooling:"Avionics test sets, cooling-fan test rig"},
+ {trade:"NDT Inspectors (Level II/III)", head:2, mh:96, shift:"Day shift", tooling:"Eddy-current probe set, UT kit, borescope"},
+ {trade:"Landing Gear Specialists (MLG Overhaul)", head:4, mh:320, shift:"Outsourced overhaul shop", tooling:"MLG jacks, hydraulic test rig, approved overhaul facility"},
+ {trade:"Powerplant Technicians", head:2, mh:64, shift:"Day shift", tooling:"Rigid/flexible borescope kit, engine stands"},
+ {trade:"Line Maintenance Crew (A-check / Zonal)", head:4, mh:96, shift:"Overnight shift", tooling:"Standard line toolkit, GSE, access platforms"},
+ {trade:"Cabin / Interior Technicians", head:2, mh:40, shift:"Day shift", tooling:"Seat & cabin panel removal tools"},
+ {trade:"Planning / QA Support", head:2, mh:60, shift:"Day shift", tooling:"Task cards, sign-off documentation, CAMO liaison"}
+];
+
+const progress = [
+ {wo:"WO-2601", task:"05-20-00-1", assigned:"Line Maint — Team B", status:"Scheduled", target:"2026-08-19", remarks:"Bundled with structures event"},
+ {wo:"WO-2602", task:"05-20-10-2", assigned:"Line Maint — Team B", status:"Scheduled", target:"2026-08-19", remarks:"Overdue at planning — prioritised to next event"},
+ {wo:"WO-2603", task:"21-26-00-1", assigned:"Avionics — Team A", status:"Scheduled", target:"2026-08-21", remarks:"Overdue — included in A-Check A-88"},
+ {wo:"WO-2604", task:"21-26-05-2", assigned:"Avionics — Team A", status:"Monitoring", target:"2026-11", remarks:"On track, tracked for next window"},
+ {wo:"WO-2605", task:"27-14-00-2", assigned:"Systems — Base Team", status:"Scheduled", target:"2026-09-10 to 22", remarks:"Included in C4 heavy visit"},
+ {wo:"WO-2606", task:"28-11-00-CMR", assigned:"Systems — Base Team", status:"Scheduled", target:"2026-09-10 to 22", remarks:"CMR — included in C4 heavy visit"},
+ {wo:"WO-2607", task:"32-11-00-ALI", assigned:"Landing Gear Shop (Sub)", status:"Scheduled", target:"2026-09-10 to 22", remarks:"MLG removed & sent to overhaul shop"},
+ {wo:"WO-2608", task:"32-21-00-ALI", assigned:"Planning — CAMO", status:"Monitoring", target:"2027 (tentative)", remarks:"On track, deferred to next heavy visit"},
+ {wo:"WO-2609", task:"32-45-00-3", assigned:"Line Maint — Team B", status:"Scheduled", target:"2026-08-21", remarks:"Included in A-Check A-88"},
+ {wo:"WO-2610", task:"52-31-00-4", assigned:"Line Maint — Team B", status:"Scheduled", target:"2026-08-21", remarks:"Included in A-Check A-88"},
+ {wo:"WO-2611", task:"71-00-00-A", assigned:"Powerplant — Team C", status:"In Progress", target:"2026-08-21", remarks:"Overdue — portable borescope kit mobilised"},
+ {wo:"WO-2612", task:"05-10-00-A", assigned:"Line Maint — Team B", status:"Scheduled", target:"2026-08-21", remarks:"Routine A-check package"},
+ {wo:"WO-2613", task:"05-10-00-C", assigned:"Base Team — Joramco", status:"Scheduled", target:"2026-09-10 to 22", remarks:"Heavy C-check package"},
+ {wo:"WO-2614", task:"55-00-00-1", assigned:"Structures — Team D", status:"Scheduled", target:"2026-08-19", remarks:"Included in structures bundle"},
+ {wo:"WO-2615", task:"00-00-00-DAILY", assigned:"Line Maint — Duty Crew", status:"Closed (recurring)", target:"Daily", remarks:"Completed 2026-08-12, next due 2026-08-13"}
+];
+
+const references = [
+ {n:"[1]", t:"EASA — Continuing Airworthiness, Regulation (EU) No 1321/2014 and related Part-M / Part-CAMO requirements."},
+ {n:"[2]", t:"EASA — Part-CAMO & Part-CAO Organisations – Aircraft Maintenance Programmes (AMP)."},
+ {n:"[3]", t:"EASA — Easy Access Rules for Continuing Airworthiness, Revision September 2025."},
+ {n:"[4]", t:"Airbus — A320 Family Maintenance Planning Document (MPD), maintenance task and interval information. Publicly accessible reference copy used for educational research."},
+ {n:"[5]", t:"DGCA India / AIESL — Approval Schedule, Airbus A319/A320/A321 maintenance capabilities."},
+ {n:"[6]", t:"Egyptian Aircraft Accident Investigation Directorate — aircraft maintenance programme example referencing Airbus A320 MPD/MRB/ALS."},
+ {n:"[+]", t:"Leeham News & Analysis — \u2018Bjorn\u2019s Corner: Maintenance Program for the A320/A321\u2019 (Parts 6 & 48) — MPD task numbering, A/C-check clustering and interval examples."},
+ {n:"[+]", t:"Aircraft Commerce Magazine — Issues 44, 111, 115, 117 — A320 Family maintenance programme analysis, C-check cycles, tyre & budget data."},
+ {n:"[+]", t:"MRB Report — Airbus A318/A319/A320/A321 — Landing Gear ALI restoration intervals (20,000 FC / 8 YE)."},
+ {n:"[+]", t:"EASA Airworthiness Directive — Technical Adaptation ref. TA 80774334/003/2020 — cargo door seal maintenance."}
+];
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+function fmt(n){ return n.toLocaleString('en-US'); }
+function addMonths(date, months){ const d=new Date(date); d.setMonth(d.getMonth()+months); return d; }
+function daysBetween(a,b){ return Math.round((a-b)/(1000*60*60*24)); }
+function fmtDate(d){
+  if (typeof d === 'string') return d;
+  return d.toISOString().slice(0,10);
+}
+
+/* ============================================================
+   FORECAST ENGINE
+   ============================================================ */
+const D0 = new Date(profile.currentDate);
+
+function computeForecast(task){
+  if (task.isDaily){
+    return {task, status:'routine', statusLabel:'ROUTINE', governType:'DAILY',
+      nextDueDisplay:'Daily — before next departure', remainingDisplay:'Continuous', percent:100};
+  }
+  const candidates = [];
+  if (task.fhInt){
+    const nextFH = task.lastDoneFH + task.fhInt;
+    const remFH = nextFH - profile.currentFH;
+    candidates.push({type:'FH', nextVal:nextFH, remaining:remFH, days:remFH/profile.dailyFH});
+  }
+  if (task.fcInt){
+    const nextFC = task.lastDoneFC + task.fcInt;
+    const remFC = nextFC - profile.currentFC;
+    candidates.push({type:'FC', nextVal:nextFC, remaining:remFC, days:remFC/profile.dailyFC});
+  }
+  if (task.moInt){
+    const nextDate = addMonths(task.lastDoneDate, task.moInt);
+    const days = daysBetween(nextDate, D0);
+    candidates.push({type:'CAL', nextVal:nextDate, remaining:days, days});
+  }
+  candidates.sort((a,b)=>a.days-b.days);
+  const gov = candidates[0];
+
+  let status, statusLabel;
+  if (gov.days < 0){ status='overdue'; statusLabel='OVERDUE'; }
+  else if (gov.days <= 45){ status='due'; statusLabel='DUE SOON'; }
+  else { status='ok'; statusLabel='ON TRACK'; }
+
+  let nextDueDisplay, remainingDisplay, percent;
+  if (gov.type==='FH'){
+    nextDueDisplay = fmt(gov.nextVal)+' FH';
+    remainingDisplay = (gov.remaining>=0? fmt(Math.round(gov.remaining))+' FH left' : fmt(Math.round(-gov.remaining))+' FH overdue') + ' (~'+Math.round(Math.abs(gov.days))+'d)';
+    percent = ((profile.currentFH - task.lastDoneFH) / task.fhInt) * 100;
+  } else if (gov.type==='FC'){
+    nextDueDisplay = fmt(gov.nextVal)+' FC';
+    remainingDisplay = (gov.remaining>=0? fmt(Math.round(gov.remaining))+' FC left' : fmt(Math.round(-gov.remaining))+' FC overdue') + ' (~'+Math.round(Math.abs(gov.days))+'d)';
+    percent = ((profile.currentFC - task.lastDoneFC) / task.fcInt) * 100;
+  } else {
+    nextDueDisplay = fmtDate(gov.nextVal);
+    remainingDisplay = (gov.days>=0? gov.days+' days left' : Math.abs(gov.days)+' days overdue');
+    const totalSpan = daysBetween(gov.nextVal, task.lastDoneDate);
+    const elapsed = daysBetween(D0, task.lastDoneDate);
+    percent = (elapsed/totalSpan)*100;
+  }
+  percent = Math.max(0, percent);
+
+  return {task, status, statusLabel, governType:gov.type, governDays:gov.days, nextDueDisplay, remainingDisplay, percent};
+}
+
+const forecasts = tasks.map(computeForecast);
+
+/* ============================================================
+   RENDER: TOP BAR + PROFILE
+   ============================================================ */
+document.getElementById('chipDate').textContent = profile.currentDate;
+document.getElementById('chipFH').textContent = fmt(profile.currentFH);
+document.getElementById('chipFC').textContent = fmt(profile.currentFC);
+
+document.getElementById('pReg').textContent = profile.registration;
+document.getElementById('pMsn').textContent = profile.msn;
+document.getElementById('pType').textContent = profile.type;
+document.getElementById('pEng').textContent = profile.engines;
+document.getElementById('pOp').textContent = profile.operator;
+document.getElementById('pBase').textContent = profile.base;
+document.getElementById('pConfig').textContent = profile.config;
+document.getElementById('pDelivery').textContent = profile.deliveryDate;
+const ageYears = ((D0 - new Date(profile.deliveryDate)) / (1000*60*60*24*365.25)).toFixed(1);
+document.getElementById('pAge').textContent = ageYears + ' years';
+document.getElementById('pFH').textContent = fmt(profile.currentFH) + ' FH';
+document.getElementById('pFC').textContent = fmt(profile.currentFC) + ' FC';
+document.getElementById('pUtil').textContent = profile.dailyFH + ' FH / ' + profile.dailyFC + ' FC per day';
+document.getElementById('pLastHeavy').textContent = profile.lastHeavy;
+
+/* ============================================================
+   RENDER: TASK LIBRARY
+   ============================================================ */
+const libBody = document.querySelector('#tblLibrary tbody');
+tasks.forEach(t=>{
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td class="mono">${t.taskNumber}</td><td>${t.description}</td>
+    <td class="mono">${t.threshold}</td><td>${t.interval}</td>
+    <td class="mono">${t.fhInt? fmt(t.fhInt):'—'}</td>
+    <td class="mono">${t.fcInt? fmt(t.fcInt):'—'}</td>
+    <td class="mono">${t.moInt? t.moInt+' MO':(t.isDaily?'Daily':'—')}</td>
+    <td class="muted">${t.source}</td><td class="muted">${t.reference}</td>`;
+  libBody.appendChild(tr);
+});
+
+/* ============================================================
+   RENDER: UTILISATION
+   ============================================================ */
+const utilBody = document.querySelector('#tblUtil tbody');
+utilisation.forEach(u=>{
+  const sector = (u.fh/u.fc).toFixed(2);
+  const dailyFh = (u.fh/30).toFixed(1);
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${u.month}</td><td class="mono">${fmt(u.fh)}</td><td class="mono">${fmt(u.fc)}</td><td class="mono">${sector}</td><td class="mono">${dailyFh}</td>`;
+  utilBody.appendChild(tr);
+});
+
+new Chart(document.getElementById('chartUtil'), {
+  type:'bar',
+  data:{
+    labels: utilisation.map(u=>u.month),
+    datasets:[
+      {label:'Flight Hours', data:utilisation.map(u=>u.fh), backgroundColor:'rgba(63,198,214,0.65)', borderRadius:4, yAxisID:'y'},
+      {label:'Flight Cycles', data:utilisation.map(u=>u.fc), backgroundColor:'rgba(240,169,59,0.55)', borderRadius:4, yAxisID:'y1'}
+    ]
+  },
+  options:{
+    responsive:true, maintainAspectRatio:false,
+    interaction:{mode:'index', intersect:false},
+    plugins:{ legend:{labels:{color:'#8ea0b8', font:{size:11}}} },
+    scales:{
+      x:{ ticks:{color:'#8ea0b8', font:{size:10}}, grid:{color:'#1e2a3c'} },
+      y:{ position:'left', ticks:{color:'#8ea0b8', font:{size:10}}, grid:{color:'#1e2a3c'}, title:{display:true,text:'FH',color:'#8ea0b8'} },
+      y1:{ position:'right', ticks:{color:'#8ea0b8', font:{size:10}}, grid:{display:false}, title:{display:true,text:'FC',color:'#8ea0b8'} }
+    }
+  }
+});
+
+/* ============================================================
+   RENDER: FORECAST TABLE (with runway bar)
+   ============================================================ */
+const fcBody = document.querySelector('#tblForecast tbody');
+forecasts.forEach(f=>{
+  const t = f.task;
+  const barClass = f.status==='overdue' ? 'red' : (f.status==='due' ? 'amber' : '');
+  const pct = Math.min(100, f.percent);
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td class="mono">${t.taskNumber}</td>
+    <td style="max-width:230px;">${t.description}</td>
+    <td class="mono">${t.lastDoneDate}</td>
+    <td class="mono">${f.governType}</td>
+    <td class="mono">${f.nextDueDisplay}</td>
+    <td class="mono">${f.remainingDisplay}</td>
+    <td>
+      <div class="runway-wrap">
+        <div class="runway ${barClass}"><div class="fill" style="width:${pct}%"></div><div class="centerline"></div></div>
+        <div class="runway-label">${Math.min(100,Math.round(f.percent))}% of interval</div>
+      </div>
+    </td>
+    <td><span class="status ${f.status}">${f.statusLabel}</span></td>`;
+  fcBody.appendChild(tr);
+});
+const overdueCount = forecasts.filter(f=>f.status==='overdue').length;
+const dueCount = forecasts.filter(f=>f.status==='due').length;
+const okCount = forecasts.filter(f=>f.status==='ok').length;
+const routineCount = forecasts.filter(f=>f.status==='routine').length;
+document.getElementById('fcCount').textContent = `${overdueCount} overdue · ${dueCount} due soon · ${okCount} on track`;
+
+/* ============================================================
+   RENDER: SCHEDULING
+   ============================================================ */
+const schBody = document.querySelector('#tblSchedule tbody');
+scheduleEvents.forEach(e=>{
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${e.event}</td><td>${e.type}</td><td>${e.station}</td>
+    <td class="mono">${e.start}</td><td class="mono">${e.end}</td>
+    <td class="mono">${e.downtime}</td><td class="mono muted">${e.tasks}</td>
+    <td><span class="status ${e.status==='Slot Confirmed'?'ok':(e.status==='Monitoring'?'routine':'due')}">${e.status.toUpperCase()}</span></td>`;
+  schBody.appendChild(tr);
+});
+
+/* ============================================================
+   RENDER: RESOURCES
+   ============================================================ */
+const resBody = document.querySelector('#tblResources tbody');
+resources.forEach(r=>{
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${r.trade}</td><td class="mono">${r.head}</td><td class="mono">${fmt(r.mh)}</td><td>${r.shift}</td><td class="muted">${r.tooling}</td>`;
+  resBody.appendChild(tr);
+});
+
+/* ============================================================
+   RENDER: PROGRESS
+   ============================================================ */
+const progBody = document.querySelector('#tblProgress tbody');
+function progressStatusClass(s){
+  if (s.includes('Closed')) return 'ok';
+  if (s.includes('In Progress')) return 'due';
+  if (s.includes('Monitoring')) return 'routine';
+  return 'due';
+}
+progress.forEach(p=>{
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td class="mono">${p.wo}</td><td class="mono">${p.task}</td><td>${p.assigned}</td>
+    <td><span class="status ${progressStatusClass(p.status)}">${p.status.toUpperCase()}</span></td>
+    <td class="mono">${p.target}</td><td class="muted">${p.remarks}</td>`;
+  progBody.appendChild(tr);
+});
+
+/* ============================================================
+   RENDER: DASHBOARD
+   ============================================================ */
+const kpiGrid = document.getElementById('kpiGrid');
+const kpis = [
+  {label:'Overdue Tasks', value:overdueCount, color:'var(--red)', sub:'require immediate action'},
+  {label:'Due Soon (\u226445d)', value:dueCount, color:'var(--amber)', sub:'plan into next event'},
+  {label:'On Track', value:okCount, color:'var(--green)', sub:'no action required'},
+  {label:'Fleet Flight Hours', value:fmt(profile.currentFH), color:'var(--cyan)', sub:profile.registration},
+  {label:'Fleet Flight Cycles', value:fmt(profile.currentFC), color:'var(--cyan)', sub:profile.registration},
+  {label:'Days to Next Heavy Check', value:daysBetween(new Date('2026-09-10'), D0), color:'var(--blue)', sub:'C4 — Joramco, Amman'}
+];
+kpis.forEach(k=>{
+  const div = document.createElement('div');
+  div.className='kpi-card';
+  div.innerHTML = `<div class="ring" style="background:conic-gradient(${k.color} 0deg 360deg, var(--border-soft) 0deg);"><span>${k.value}</span></div>
+    <div class="kpi-meta"><div class="kpi-label">${k.label}</div><div class="kpi-sub">${k.sub}</div></div>`;
+  kpiGrid.appendChild(div);
+});
+
+const sortedForecasts = forecasts.filter(f=>!f.task.isDaily).slice().sort((a,b)=>a.governDays-b.governDays);
+new Chart(document.getElementById('chartDays'), {
+  type:'bar',
+  data:{
+    labels: sortedForecasts.map(f=>f.task.taskNumber),
+    datasets:[{
+      label:'Days remaining (governing parameter)',
+      data: sortedForecasts.map(f=>Math.round(f.governDays)),
+      backgroundColor: sortedForecasts.map(f=> f.status==='overdue' ? '#e6533c' : (f.status==='due' ? '#f0a93b' : '#54c97a')),
+      borderRadius:4
+    }]
+  },
+  options:{
+    indexAxis:'y', responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    scales:{
+      x:{ ticks:{color:'#8ea0b8', font:{size:10}}, grid:{color:'#1e2a3c'}, title:{display:true,text:'Days',color:'#8ea0b8'} },
+      y:{ ticks:{color:'#8ea0b8', font:{size:10}}, grid:{display:false} }
+    }
+  }
+});
+
+new Chart(document.getElementById('chartStatus'), {
+  type:'doughnut',
+  data:{
+    labels:['Overdue','Due Soon','On Track','Routine'],
+    datasets:[{ data:[overdueCount, dueCount, okCount, routineCount],
+      backgroundColor:['#e6533c','#f0a93b','#54c97a','#5b8def'], borderWidth:0 }]
+  },
+  options:{
+    responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{position:'bottom', labels:{color:'#8ea0b8', font:{size:11}, padding:14}} }
+  }
+});
+
+/* ============================================================
+   RENDER: REFERENCES
+   ============================================================ */
+const refList = document.getElementById('refList');
+references.forEach(r=>{
+  const li = document.createElement('li');
+  li.innerHTML = `<span class="refnum">${r.n}</span><span>${r.t}</span>`;
+  refList.appendChild(li);
+});
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+document.querySelectorAll('.navitem').forEach(item=>{
+  item.addEventListener('click', ()=>{
+    document.querySelectorAll('.navitem').forEach(i=>i.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+    item.classList.add('active');
+    document.getElementById('sec-'+item.dataset.target).classList.add('active');
+    window.scrollTo({top:0, behavior:'smooth'});
+  });
+});
+
+/* ============================================================
+   EXCEL EXPORT
+   ============================================================ */
+document.getElementById('exportBtn').addEventListener('click', ()=>{
+  const wb = XLSX.utils.book_new();
+
+  const profileRows = [
+    ['Field','Value'],
+    ['Registration', profile.registration],
+    ['MSN', profile.msn],
+    ['Aircraft Type', profile.type],
+    ['Engines', profile.engines],
+    ['Operator', profile.operator],
+    ['Home Base', profile.base],
+    ['Cabin Configuration', profile.config],
+    ['Delivery Date', profile.deliveryDate],
+    ['Aircraft Age (years)', ageYears],
+    ['As-of Date', profile.currentDate],
+    ['Current Flight Hours', profile.currentFH],
+    ['Current Flight Cycles', profile.currentFC],
+    ['Avg Daily Utilisation FH', profile.dailyFH],
+    ['Avg Daily Utilisation FC', profile.dailyFC],
+    ['Last Heavy Check', profile.lastHeavy]
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(profileRows), '01 Aircraft Profile');
+
+  const libRows = [['Task Number','Description','Threshold','Interval','FH','FC','Calendar','Source','Reference']]
+    .concat(tasks.map(t=>[t.taskNumber,t.description,t.threshold,t.interval,t.fhInt||'',t.fcInt||'',t.moInt?t.moInt+' MO':(t.isDaily?'Daily':''),t.source,t.reference]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(libRows), '02 Source Task Library');
+
+  const utilRows = [['Month','Flight Hours','Flight Cycles','Avg Sector (hrs)','Daily Util (FH)']]
+    .concat(utilisation.map(u=>[u.month,u.fh,u.fc,(u.fh/u.fc).toFixed(2),(u.fh/30).toFixed(1)]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(utilRows), '03 Aircraft Utilisation');
+
+  const fcRows = [['Task Number','Description','Last Done','Governing Parameter','Next Due','Remaining','% Interval Consumed','Status']]
+    .concat(forecasts.map(f=>[f.task.taskNumber, f.task.description, f.task.lastDoneDate, f.governType, f.nextDueDisplay, f.remainingDisplay, Math.round(f.percent)+'%', f.statusLabel]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(fcRows), '04 Due Forecast');
+
+  const schRows = [['Event','Type','Station','Planned Start','Planned End','Downtime','Tasks Included','Status']]
+    .concat(scheduleEvents.map(e=>[e.event,e.type,e.station,e.start,e.end,e.downtime,e.tasks,e.status]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(schRows), '05 Maintenance Scheduling');
+
+  const resRows = [['Trade / Skill','Headcount','Man-Hours Est.','Shift Pattern','Special Tooling / Materials']]
+    .concat(resources.map(r=>[r.trade,r.head,r.mh,r.shift,r.tooling]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resRows), '06 Resource Planning');
+
+  const progRows = [['WO No.','Task','Assigned To','Status','Target Date','Remarks']]
+    .concat(progress.map(p=>[p.wo,p.task,p.assigned,p.status,p.target,p.remarks]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(progRows), '07 Progress Monitoring');
+
+  const dashRows = [['KPI','Value']].concat(kpis.map(k=>[k.label, k.value]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dashRows), '08 Dashboard Summary');
+
+  const refRows = [['Ref','Source']].concat(references.map(r=>[r.n, r.t]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(refRows), '09 References');
+
+  XLSX.writeFile(wb, `${profile.registration}_A320_Maintenance_Planning_${profile.currentDate}.xlsx`);
+});
+</script>
+</body>
+</html>
