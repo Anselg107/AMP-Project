@@ -1,1 +1,0 @@
-A self-directed A320 aircraft maintenance planning and scheduling case study demonstrating FH, FC and calendar-based maintenance forecasting, task scheduling, resource coordination and progress monitoring.
